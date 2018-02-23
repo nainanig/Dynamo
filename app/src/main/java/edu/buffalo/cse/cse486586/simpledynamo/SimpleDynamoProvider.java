@@ -1,27 +1,28 @@
 package edu.buffalo.cse.cse486586.simpledynamo;
 
 import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.EOFException;
+import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Formatter;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
-import java.util.TreeMap;
-import java.util.concurrent.ThreadFactory;
+import java.util.Set;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -34,1107 +35,1947 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 
 public class SimpleDynamoProvider extends ContentProvider {
-    static final String Content_URI = "content://edu.buffalo.cse.cse486586.simpledynamo.provider";
-    static final Uri URI = Uri.parse(Content_URI);
-    String successor_node1 = "";
-    String successor_node2 = "";
-    String predecessor_node = "";
-    String predecessor_hash;
-    String successor1_hash;
-    String successor2_hash;
-    String current_port_hash;
-    static final String REMOTE_PORT[] = {"11108", "11112", "11116", "11120", "11124"};
-    static final String port[] = {"5554", "5556", "5558", "5560", "5562"};
-    static final int SERVER_PORT = 10000;
-    static final String KEY_FIELD = "key";
-    static final String VALUE_FIELD = "value";
-    static String avds[] = new String[5];
-public String failed_avd="";
-    String myPort = "";
-    String portStr;
 
-    @Override
+    static String myPort;
+    private static final String TAG = SimpleDynamoProvider.class.getName();
+    static final int SERVER_PORT = 10000;
+    private static final String KEY_FIELD = "key";
+    private static final String VALUE_FIELD = "value";
+    ArrayList<Node> nodeList = new ArrayList<Node>(5);
+    String[] avdList = {"5562", "5556", "5554", "5558", "5560"};
+    String[] portList = { "11124", "11112", "11108", "11116", "11120"};
+    String[] hashList = new String[5];
+    HashMap<String,Message> keyVersionMap = new HashMap<String, Message>();
+    static boolean receivedData = false;
+    ArrayList<String> dataReceivedFromNode = new ArrayList<String>();
+
+	@Override
+	/*public int delete(Uri uri, String selection, String[] selectionArgs) {
+		// TODO Auto-generated method stub
+		return 0;
+	}*/
     public int delete(Uri uri, String selection, String[] selectionArgs) {
         // TODO Auto-generated method stub
 
-        try {
-            Context c = this.getContext();
-            String files[] = c.fileList();
-            if (selection.equals("@") || selection.equals("/@/")) {
+        if ( !selection.equals("@") && !selection.equals("*") ) {
 
-                for (int i = 0; i < files.length; i++) {
-                    c.deleteFile(files[i]);
-                }
+            //new File(uri.toString()).delete();
+            if (getContext().deleteFile(selection)) {
+
+                return 1;
 
             } else {
-                int count = 0;
-                //check if key exists in current node
-                for (int i = 0; i < files.length; i++) {
-                    if (files[i].equals(selection)) {
-                        count += 1;
-                    }
-                }
-                if ((((genHash(selection).compareTo(predecessor_hash) > 0) && (genHash(selection).compareTo(current_port_hash) < 0)) || (((genHash(selection).compareTo(predecessor_hash) > 0) || (genHash(selection).compareTo(current_port_hash) < 0)) && (predecessor_hash.compareTo(current_port_hash) > 0) && (successor1_hash.compareTo(current_port_hash) > 0))) || (count > 0)) {
 
-                    c.deleteFile(selection);
-                } else {
-                    if ((genHash(selection).compareTo(genHash(avds[4])) > 0) || (genHash(selection).compareTo(genHash(avds[0])) < 0)) {
-                        Log.d("In forward delete", genHash(avds[0]) + ":" + selection + ":" + genHash(selection));
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[0]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Delete" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        if (in.readUTF().equals("ACK")) {
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-
-                    } else if ((genHash(selection).compareTo(genHash(avds[3])) > 0) && (genHash(selection).compareTo(genHash(avds[4])) < 0)) {
-                        Log.d("In forward delete", genHash(avds[4]) + ":" + selection + ":" + genHash(selection));
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[4]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Delete" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        if (in.readUTF().equals("ACK")) {
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-
-                    } else if ((genHash(selection).compareTo(genHash(avds[2])) > 0) && (genHash(selection).compareTo(genHash(avds[3])) < 0)) {
-                        Log.d("In forward delete", genHash(avds[3]) + ":" + selection + ":" + genHash(selection));
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[3]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Delete" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        if (in.readUTF().equals("ACK")) {
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-
-
-                    } else if ((genHash(selection).compareTo(genHash(avds[0])) > 0) && (genHash(selection).compareTo(genHash(avds[1])) < 0)) {
-                        Log.d("In forward delete", genHash(avds[1]) + ":" + selection + ":" + genHash(selection));
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[1]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Delete" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        if (in.readUTF().equals("ACK")) {
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-
-
-                    } else if ((genHash(selection).compareTo(genHash(avds[1])) > 0) && (genHash(selection).compareTo(genHash(avds[2])) < 0)) {
-                        Log.d("In forward delete", genHash(avds[2]) + ":" + selection + ":" + genHash(selection));
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[2]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Delete" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        if (in.readUTF().equals("ACK")) {
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-
-                    }
-
-
-                }
-
+                Log.d("Del-Not Working-File:", selection);
 
             }
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+
+
+        } else if ( selection.equals("@") ) {
+
+            try {
+
+                int count = 0;
+
+                Log.d(TAG, "inside @ delete");
+
+                String[] filenames = getContext().fileList();
+
+                for ( String name : filenames ) {
+
+
+                    File dir = getContext().getFilesDir();
+                    File file = new File(dir, name);
+                    boolean deleted = file.delete();
+
+
+                    if (deleted) {
+
+                        count = count + 1;
+
+                    } else {
+
+                        Log.d("Delete", "Nahi chala");
+
+                    }
+
+
+                }
+                return count;
+
+            } catch (Exception e) {
+
+                Log.e(TAG, "File delete failed");
+
+            }
+
+
+        } else {
+
+            try {
+
+                int count = 0;
+
+                Log.d(TAG, "inside * delete");
+
+                String[] filenames = getContext().fileList();
+
+                for ( String name : filenames ) {
+
+
+                    File dir = getContext().getFilesDir();
+                    File file = new File(dir, name);
+                    boolean deleted = file.delete();
+
+
+                    if (deleted) {
+
+                        count = count + 1;
+
+                    } else {
+
+                        Log.d("Delete", "Nahi chala");
+
+                    }
+
+
+                }
+                return count;
+
+            } catch (Exception e) {
+
+                Log.e(TAG, "File delete failed");
+
+            }
+
+
         }
+
         return 0;
     }
 
-    @Override
-    public String getType(Uri uri) {
-        // TODO Auto-generated method stub
-        return null;
+
+
+	@Override
+	public String getType(Uri uri) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+
+	@Override
+	public boolean onCreate() {
+		// TODO Auto-generated method stub
+
+        //need to get ownport value also
+        TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
+        String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
+        myPort = String.valueOf((Integer.parseInt(portStr) * 2));
+        Log.d("port", myPort);
+
+        int i;
+
+        for ( i = 0; i < portList.length; i++ ) {
+
+            try {
+
+                if ( i == 0 ) {
+
+
+                    Node newNode = new Node();
+                    newNode.avdNum = avdList[0];
+                    newNode.ownPort = portList[0];
+                    newNode.hashOwnAvd = genHash(avdList[0]);
+                    newNode.predecessorPort = portList[4];
+                    newNode.hashOfPredecessor = genHash(avdList[4]);
+                    newNode.successorOnePort = portList[i+1];
+                    newNode.hashOfSuccessorOne = genHash(avdList[i+1]);
+                    newNode.successorTwoPort = portList[i+2];
+                    newNode.hashOfSuccessorTwo = genHash(avdList[i+2]);
+                    nodeList.add(0, newNode);
+
+                } else if ( i == 4 ) {
+
+                    Node newNode = new Node();
+                    newNode.avdNum = avdList[4];
+                    newNode.ownPort = portList[4];
+                    newNode.hashOwnAvd = genHash(avdList[4]);
+                    newNode.predecessorPort = portList[i-1];
+                    newNode.hashOfPredecessor = genHash(avdList[i-1]);
+                    newNode.successorOnePort = portList[0];
+                    newNode.hashOfSuccessorOne = genHash(avdList[0]);
+                    newNode.successorTwoPort = portList[1];
+                    newNode.hashOfSuccessorTwo = genHash(avdList[1]);
+                    nodeList.add(4, newNode);
+
+
+                } else if ( i == 3 ) {
+
+                    Node newNode = new Node();
+                    newNode.avdNum = avdList[3];
+                    newNode.ownPort = portList[3];
+                    newNode.hashOwnAvd = genHash(avdList[3]);
+                    newNode.predecessorPort = portList[i-1];
+                    newNode.hashOfPredecessor = genHash(avdList[i-1]);
+                    newNode.successorOnePort = portList[i+1];
+                    newNode.hashOfSuccessorOne = genHash(avdList[i+1]);
+                    newNode.successorTwoPort = portList[0];
+                    newNode.hashOfSuccessorTwo = genHash(avdList[0]);
+                    nodeList.add(3, newNode);
+
+                } else {
+
+                    Node newNode = new Node();
+                    newNode.avdNum = avdList[i];
+                    newNode.ownPort = portList[i];
+                    newNode.hashOwnAvd = genHash(avdList[i]);
+                    newNode.predecessorPort = portList[i-1];
+                    newNode.hashOfPredecessor = genHash(avdList[i-1]);
+                    newNode.successorOnePort = portList[i+1];
+                    newNode.hashOfSuccessorOne = genHash(avdList[i+1]);
+                    newNode.successorTwoPort = portList[i+2];
+                    newNode.hashOfSuccessorTwo = genHash(avdList[i+2]);
+                    nodeList.add(i, newNode);
+
+                }
+
+            } catch (NoSuchAlgorithmException e) {
+
+                Log.d(TAG, "Error Generating Hash Value");
+
+            }
+
+
+        }
+
+        int j;
+
+        for (j=0; j < avdList.length; j++) {
+
+
+            try {
+
+                hashList[j] = genHash(avdList[j]);
+
+
+            } catch ( NoSuchAlgorithmException e ) {
+
+                Log.e(TAG, "error generating avd hashes");
+
+            }
+
+        }
+
+
+        try {
+
+            ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
+
+            new ServerTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, serverSocket);
+
+
+        } catch ( IOException e ) {
+
+            Log.e(TAG, "can't create a server socket");
+
+        }
+
+        //new asyn tasks that asks's successor for all the keys , then deletes all it's files and replaces all the values
+
+        String message = "retrieve_mine" + "@" + myPort + '\n';
+        String successors = "";
+        String predecessor = "";
+
+        //String[] portList = { "11124", "11112", "11108", "11116", "11120"};
+
+        if (myPort.equals("11124")) {
+
+            successors = "11112-11108";
+            predecessor =  "11120-11116";
+
+        } else if (myPort.equals("11112")) {
+
+            successors = "11108-11116";
+            predecessor = "11124-11120";
+
+        } else if (myPort.equals("11108")) {
+
+            successors = "11116-11120";
+            predecessor = "11112-11124";
+
+        } else if (myPort.equals("11116")) {
+
+            successors = "11120-11124";
+            predecessor = "11108-11112";
+
+        }  else {
+
+            successors = "11124-11112";
+            predecessor = "11116-11108";
+
+        }
+
+        new RetrieveKeyTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, message, successors, predecessor);
+
+		return false;
+	}
+
+    private class ServerTask extends AsyncTask<ServerSocket, String, Void>{
+
+        @Override
+        protected Void doInBackground(ServerSocket... sockets) {
+
+            ServerSocket serverSocket = sockets[0];
+            Socket socket;
+
+            try {
+
+                while( true ) {
+
+                    socket = serverSocket.accept();
+                    Log.d(TAG, "inside-server-task");
+
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                    String message = "null";
+                    String unformattedMessage = "";
+                    String[] messageData = new String[0];
+
+                    message = in.readLine();
+                    Log.d("Message-Server", message);
+                    unformattedMessage = message.trim();
+                    messageData = unformattedMessage.split("@");
+
+                    Log.d(TAG, messageData[0]);
+
+                    if (messageData[0].equals("insert") ) {
+
+                        String key = messageData[1];
+                        String value = messageData[2];
+                        String returnPort = messageData[3];
+                        String coordinatorPort = messageData[4];
+
+                        Log.d(TAG, "***InsideInsert****");
+                        Log.d("Key", key);
+                        Log.d("Value", value);
+                        Log.d("ReturnPort", returnPort);
+                        Log.d("CoordinatorPort", coordinatorPort);
+                        Log.d(TAG, "***InsideInsert****");
+
+
+                        if ( keyVersionMap.get(key) == null ) {
+
+                            Message details = new Message();
+                            details.coordinatorPort = coordinatorPort;
+                            details.versionNumber = 1;
+                            Log.d("NewInsert-KVMapCDPort", details.coordinatorPort);
+
+                            keyVersionMap.put(key, details);
+
+                            String filename = key;
+                            FileOutputStream outputStream;
+
+                            try {
+                                outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                outputStream.write(value.getBytes());
+                                outputStream.close();
+                            } catch (Exception e) {
+                                Log.e(TAG, "File write failed");
+                            }
+
+                            Log.d("Insert-Server-New", "Key:" + key + ", values:" + value);
+
+
+                        } else {
+
+                            Message details = keyVersionMap.get(key);
+                            details.versionNumber = details.versionNumber + 1;
+                            //don't need it
+                            Log.d("UpdInsert-KVMapCDPort", details.coordinatorPort);
+                            details.coordinatorPort = coordinatorPort;
+                            keyVersionMap.put(key, details);
+
+                            if ( getContext().deleteFile(key) ) {
+
+
+                                String filename = key;
+                                FileOutputStream outputStream;
+
+                                try {
+                                    outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                    outputStream.write(value.getBytes());
+                                    outputStream.close();
+                                } catch (Exception e) {
+                                    Log.e(TAG, "File write failed");
+                                }
+
+                                Log.d("Insert-Server-Upd", "Key:" + key + ", values:" + value);
+
+
+                            } else {
+
+                                Log.d("Error-updating-file", key);
+
+                            }
+
+
+                        }
+
+                        String sendmessage = "key_inserted" + "@" + key + '\n';
+                        Log.d("SendMessageFormat", sendmessage);
+                        PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                        out.print(sendmessage);
+                        out.flush();
+
+
+                    } else if (messageData[0].equals("replicate") ) {
+
+
+                        String key = messageData[1];
+                        String value = messageData[2];
+                        String returnPort = messageData[3];
+                        String coordinatorPort = messageData[4];
+
+                        Log.d(TAG, "***InsideReplicate****");
+                        Log.d("Key", key);
+                        Log.d("Value", value);
+                        Log.d("ReturnPort", returnPort);
+                        Log.d("CoordinatorPort", coordinatorPort);
+                        Log.d(TAG, "***InsideInsert****");
+
+                        if ( keyVersionMap.get(key) == null ) {
+
+                            Message details = new Message();
+                            details.coordinatorPort = coordinatorPort;
+                            details.versionNumber = 1;
+                            Log.d("NewRep-EntryKVMapCDPort", details.coordinatorPort);
+
+                            keyVersionMap.put(key, details);
+
+                            String filename = key;
+                            FileOutputStream outputStream;
+
+                            try {
+                                outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                outputStream.write(value.getBytes());
+                                outputStream.close();
+                            } catch (Exception e) {
+                                Log.e(TAG, "File write failed");
+                            }
+
+                            Log.d("Insert-Server-New", "Key:" + key + ", values:" + value);
+
+
+                        } else {
+
+                            Message details = keyVersionMap.get(key);
+                            Log.d("UpdRep-EntryKVMapCDPort",details.coordinatorPort);
+                            details.versionNumber = details.versionNumber + 1;
+                            details.coordinatorPort = coordinatorPort;
+                            keyVersionMap.put(key, details);
+
+                            if ( getContext().deleteFile(key) ) {
+
+
+                                String filename = key;
+                                FileOutputStream outputStream;
+
+                                try {
+                                    outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                    outputStream.write(value.getBytes());
+                                    outputStream.close();
+                                } catch (Exception e) {
+                                    Log.e(TAG, "File write failed");
+                                }
+
+                                Log.d("Insert-Server-Upd", "Key:" + key + ", values:" + value);
+
+
+                            } else {
+
+                                Log.d("Error-updating-file", key);
+
+                            }
+
+
+                        }
+
+                        String sendmessage = "key_inserted" + "@" + key + '\n';
+                        Log.d("SendMessageFormat", sendmessage);
+                        PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                        out.print(sendmessage);
+                        out.flush();
+
+
+                    } else if (messageData[0].equals("retrieve_key")) {
+
+                        Log.d("Here-inside", "retrieve_key");
+
+                        String key = messageData[1];
+                        String returnPort = messageData[2];
+
+                        File file = getContext().getFileStreamPath(key);
+                        StringBuffer fileContent = new StringBuffer("");
+
+                        if ( file.exists() ) {
+
+                            Message details = keyVersionMap.get(key);
+                            int version_value = details.versionNumber;
+
+                            try {
+
+                                FileInputStream fis;
+                                fis = getContext().openFileInput(key);
+
+                                byte[] buffer = new byte[1024];
+
+                                int n;
+
+                                while ((n = fis.read(buffer)) != -1) {
+
+                                    fileContent.append(new String(buffer, 0, n));
+
+                                }
+                                Log.d("File Content:", fileContent.toString());
+
+
+                            } catch (Exception e) {
+
+                                Log.e(TAG, "File read failed");
+
+                            }
+
+
+                            String sendmessage = "key_found" + "@" + key + "@" + fileContent.toString() + "@" + version_value + '\n';
+                            Log.d("SendMessageFormat", sendmessage);
+
+                            PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                            out.print(sendmessage);
+                            out.flush();
+
+                        } else {
+
+                            Log.d("File-retrieve", "error");
+
+                        }
+
+                    } else if (messageData[0].equals("retrieve_all")) {
+
+
+                        Log.d("Inside-ret-all", message);
+                        String keyValuePairs = "";
+                        FileInputStream fis;
+
+
+
+                        String[] filenames = getContext().fileList();
+
+                        if (filenames.length != 0) {
+
+
+                            StringBuffer fileContent = new StringBuffer("");
+
+                            for ( String name : filenames ) {
+
+                                String[] record = new String[2];
+
+
+                                Log.d("FileName:", name);
+                                fis = getContext().openFileInput(name);
+
+                                byte[] buffer = new byte[1024];
+
+                                int n;
+
+                                while ((n = fis.read(buffer)) != -1) {
+
+                                    fileContent.append(new String(buffer, 0, n));
+
+                                }
+
+                                //record[0] = name;
+                                //record[1] = fileContent.toString();
+                                //comma separated version number
+                                keyValuePairs += name + "," + fileContent.toString() + "-";
+
+
+                                //reset string buffer
+                                fileContent.delete(0, fileContent.length());
+
+
+                            }
+                            String updatedKeyValuePair = keyValuePairs.substring(0, keyValuePairs.length()-1);
+
+
+                            String sendMessage = updatedKeyValuePair + "@" + myPort + '\n';
+
+                            PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                            out.print(sendMessage);
+                            out.flush();
+
+                        } else {
+
+                            String sendMessage = "no_files" + "@" + myPort + '\n';
+
+                            PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                            out.print(sendMessage);
+                            out.flush();
+
+                        }
+
+
+
+                    } else if ( messageData[0].equals("retrieve_mine") ) {
+
+                            String coordinatorPort = messageData[1];
+                            Log.d("coordinatorPort", coordinatorPort);
+                            String keyValuePairs = "";
+                            String updatedKeyValuePair = "";
+                            FileInputStream fis;
+
+                            String[] filenames = getContext().fileList();
+
+                            Log.d("FilenamesLength", String.valueOf(filenames.length));
+                            if (filenames.length != 0) {
+
+                                StringBuffer fileContent = new StringBuffer("");
+
+                                for ( String name : filenames ) {
+
+                                    Log.d("FileNameCheck:", name);
+
+                                    String[] record = new String[2];
+
+                                   //Message details = keyVersionMap.get(name);
+                                    //TODO: BREAKS OVER HERE SOMETIMES
+                                    //Log.d("messagestoredportpn", String.valueOf(details.toString()));
+                                    //Log.d("messagestoredportpn", String.valueOf(details.coordinatorPort));
+
+                                    Node coordinatorNodeForCurrentFile = getPreferenceNodeDetails(name);
+
+                                    if (coordinatorNodeForCurrentFile.ownPort.equals(coordinatorPort)) {
+
+                                        Message details = keyVersionMap.get(name);
+                                        //int version_number = details.versionNumber;
+
+                                        Log.d("FileName:", name);
+                                        fis = getContext().openFileInput(name);
+
+                                        byte[] buffer = new byte[1024];
+
+                                        int n;
+
+                                        while ((n = fis.read(buffer)) != -1) {
+
+                                            fileContent.append(new String(buffer, 0, n));
+
+                                        }
+
+                                        keyValuePairs += name + "," + fileContent.toString() + "," + String.valueOf(1) + "-";
+
+                                        //reset string buffer
+                                        fileContent.delete(0, fileContent.length());
+
+
+                                    } else {
+
+                                        continue;
+
+                                    }
+
+                                    //check if coordinator is the passedCoordinatorPort (basically for every key - do getPreferenceNode details)
+                                    //if yes, add me to the list
+                                    //else continue
+
+                                    /*if ( details.coordinatorPort.equals(coordinatorPort)) {
+
+                                        Log.d("messagestoredport", details.coordinatorPort);
+                                        Log.d("coordinator-port", coordinatorPort);
+
+                                        int version_number = details.versionNumber;
+
+                                        Log.d("FileName:", name);
+                                        fis = getContext().openFileInput(name);
+
+                                        byte[] buffer = new byte[1024];
+
+                                        int n;
+
+                                        while ((n = fis.read(buffer)) != -1) {
+
+                                            fileContent.append(new String(buffer, 0, n));
+
+                                        }
+
+                                        //record[0] = name;
+                                        //record[1] = fileContent.toString();
+                                        //comma separated version number
+                                        keyValuePairs += name + "," + fileContent.toString() + "," + String.valueOf(version_number) + "-";
+
+                                        //reset string buffer
+                                        fileContent.delete(0, fileContent.length());
+
+
+                                    } else {
+
+                                        continue;
+
+                                    }*/
+                                }
+                                Log.d("Key-val-pairs", keyValuePairs);
+                                //check laga dena ki key value pair null na ho
+                                if ( (keyValuePairs != null)&&(!keyValuePairs.equals("")) ) {
+                                    updatedKeyValuePair = keyValuePairs.substring(0, keyValuePairs.length() - 1);
+                                }
+                                String sendMessage = null;
+
+                                if ( (updatedKeyValuePair != null)&&(!updatedKeyValuePair.equals("")) ) {
+
+                                    sendMessage = updatedKeyValuePair + "@" + myPort + '\n';
+
+                                } else {
+
+                                    sendMessage = "no_files" + "@" + myPort + '\n';
+
+                                }
+
+                                PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                                out.print(sendMessage);
+                                out.flush();
+
+
+
+
+                            } else {
+
+                                String sendMessage = "no_files" + "@" + myPort + '\n';
+
+                                PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                                out.print(sendMessage);
+                                out.flush();
+
+
+                            }
+
+
+                    } else if ( messageData[0].equals("retrieve_your_keys") ) {
+
+                        String returnPort = messageData[1];
+                        Log.d("predReturnPort", returnPort);
+                        String keyValuePairs = "";
+                        String updatedKeyValuePair = "";
+
+                        FileInputStream fis;
+                        String[] filenames = getContext().fileList();
+
+                        if (filenames.length != 0) {
+
+                            StringBuffer fileContent = new StringBuffer("");
+
+                            for ( String name : filenames ) {
+
+                                String[] record = new String[2];
+
+                                Message details = keyVersionMap.get(name);
+                                //TODO: BREAKS OVER HERE AS WELL
+                                Log.d("before-if-con-port", details.coordinatorPort);
+
+                                //check if coordinator is myPort or if coordinator is my predecessor
+                                //if yes, add me to the list
+                                //else continue
+
+
+                                if ( details.coordinatorPort.equals(myPort)) {
+
+                                    Log.d("msg-cord-port", details.coordinatorPort);
+                                    Log.d("my-port-pred", myPort);
+
+                                    int version_number = details.versionNumber;
+
+                                    Log.d("FileName:", name);
+                                    fis = getContext().openFileInput(name);
+
+                                    byte[] buffer = new byte[1024];
+
+                                    int n;
+
+                                    while ((n = fis.read(buffer)) != -1) {
+
+                                        fileContent.append(new String(buffer, 0, n));
+
+                                    }
+
+                                    keyValuePairs += name + "," + fileContent.toString() + "," + String.valueOf(version_number) + "-";
+
+                                    //reset string buffer
+                                    fileContent.delete(0, fileContent.length());
+
+
+                                } else {
+
+                                    continue;
+
+                                }
+                            }
+                            Log.d("panga=keyval", keyValuePairs);
+                            //check laga dena ki key value pair null na ho
+                            if ( !keyValuePairs.equals("") ) {
+                                updatedKeyValuePair = keyValuePairs.substring(0, keyValuePairs.length() - 1);
+                            }
+                            String sendMessage = null;
+
+                            if ( updatedKeyValuePair != null ) {
+
+                                sendMessage = updatedKeyValuePair + "@" + myPort + '\n';
+
+                            } else {
+
+                                sendMessage = "no_files" + "@" + myPort + '\n';
+
+                            }
+
+                            PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                            out.print(sendMessage);
+                            out.flush();
+
+
+                        } else {
+
+                            String sendMessage = "no_files" + "@" + myPort + '\n';
+
+                            PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                            out.print(sendMessage);
+                            out.flush();
+
+
+                        }
+
+
+                    }
+
+
+
+
+                }
+
+
+            } catch(IOException e) {
+
+                Log.e(TAG, "error receiving messages-Server-Task");
+
+            }
+
+            return null;
+        }
     }
+
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
         // TODO Auto-generated method stub
-        Log.d("In insert", portStr);
-        try {
-            FileOutputStream outputStream;
-            String key = values.getAsString("key");
-            String value = values.getAsString("value");
 
-            String key_hash = genHash(key);
-            Log.d("at initial insert", "key " + key);
-            Log.d("key " + key, " hash key " + key_hash);
-            if (((key_hash.compareTo(predecessor_hash) > 0) && (key_hash.compareTo(current_port_hash) < 0)) || ((predecessor_hash.compareTo(current_port_hash) > 0) && (current_port_hash.compareTo(key_hash) > 0)) || ((predecessor_hash.compareTo(current_port_hash) > 0) && (key_hash.compareTo(predecessor_hash) > 0))) {
+        Log.d(TAG, "I was called");
 
-                outputStream = getContext().openFileOutput(key, Context.MODE_PRIVATE);
-                outputStream.write(value.getBytes());
-                outputStream.close();
-                Log.d("Current port insert", portStr + ":" + key + ":" + value);
-                Log.d("Successor 1", successor_node1);
+        Set<Map.Entry<String, Object>> data = values.valueSet();
+        Iterator itr = data.iterator();
+        String key = "";
+        String value = "";
+
+        while (itr.hasNext()) {
+
+            Map.Entry me = (Map.Entry)itr.next();
+            value = me.getValue().toString();
+            me = (Map.Entry)itr.next();
+            key = me.getValue().toString();
+
+            Log.d("key-", key);
+            Log.d("value-", value);
+
+        }
+
+        Node coordinatorNodeForKey = getPreferenceNodeDetails(key);
+        Log.d(TAG, "***BeforeCheckingInsertConditions****");
+        Log.d("CoordinatorPort", coordinatorNodeForKey.ownPort);
+        Log.d("Node", coordinatorNodeForKey.avdNum);
+        Log.d(TAG, "***BeforeCheckingInsertConditions****");
+
+        if ( coordinatorNodeForKey.ownPort.equals(myPort) ) {
+
+            if ( keyVersionMap.get(key) == null ) {
+
+                Message details = new Message();
+                details.coordinatorPort = myPort;
+                details.versionNumber = 1;
+
+                keyVersionMap.put(key, details);
+                Log.d("InsideInsertCdPMyP", details.coordinatorPort);
+
+                String filename = key;
+                FileOutputStream outputStream;
+
                 try {
-                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(successor_node1) * 2);
-                    DataOutputStream out_insert = new DataOutputStream(socket.getOutputStream());
-                    out_insert.writeUTF("Replicate 1" + ":" + key + ":" + value);
-                    DataInputStream in_insert = new DataInputStream(socket.getInputStream());
-                    String read_input = in_insert.readUTF();
-                    Log.d("read input", read_input);
-                    if (read_input.equals("ACK")) {
-                        out_insert.flush();
-                        out_insert.close();
-                        socket.close();
-                    }
+                    outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                    outputStream.write(value.getBytes());
+                    outputStream.close();
+                } catch (Exception e) {
+                    Log.e(TAG, "File write failed");
+                }
 
-                } catch (SocketTimeoutException st) {
-                    failed_avd=successor_node1;
-                    Log.d("current succ fail",failed_avd);
-                    st.printStackTrace();
-                }
-                catch (IOException st) {
-                    failed_avd=successor_node1;
-                    Log.d("current succ fail",failed_avd);
-                    st.printStackTrace();
-                }
-                if(!failed_avd.equals(successor_node1)){
-                    Socket socket=new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(successor_node2)*2);
-                    DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                    out.writeUTF("Replicate 2"+":"+key+":"+value);
-                    DataInputStream in=new DataInputStream(socket.getInputStream());
-                    if(in.readUTF().equals("ACK")){
-                        out.flush();
-                        out.close();
-                        socket.close();
-                    }
-                }
+                Log.d("Testing Insert", "Key:" + key + ", values:" + value);
+                Log.v("insert", values.toString());
 
             } else {
-                String successor[] = new String[2];
-                String current="";
+
+                Message details = keyVersionMap.get(key);
+                details.versionNumber = details.versionNumber + 1;
+                Log.d("InsideUpdInsertCdPMyP", details.coordinatorPort);
+                details.coordinatorPort = coordinatorNodeForKey.ownPort;
+                keyVersionMap.put(key, details);
+
+                if ( getContext().deleteFile(key) ) {
+
+
+                    String filename = key;
+                    FileOutputStream outputStream;
+
+                    try {
+                        outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                        outputStream.write(value.getBytes());
+                        outputStream.close();
+                    } catch (Exception e) {
+                        Log.e(TAG, "File write failed");
+                    }
+
+                    Log.d("Testing Insert", "Key:" + key + ", values:" + value);
+                    Log.v("insert-updated", values.toString());
+
+
+                } else {
+
+                    Log.d("Error-updating-file", key);
+
+                }
+
+
+            }
+
+            Log.d("Before-FwdRepReqToSucc", "******");
+            Log.d("CoordinatorPort", coordinatorNodeForKey.ownPort);
+            Log.d("Succ1Port", coordinatorNodeForKey.successorOnePort);
+            Log.d("Succ2Port", coordinatorNodeForKey.successorTwoPort);
+            Log.d("Before-FwdRepReqToSucc", "******");
+
+
+            //forward request to my two successor nodes as well
+            String message2 = "replicate" + "@" + key + "@" + value + "@" + myPort + "@" + coordinatorNodeForKey.ownPort +'\n';
+            String[] successorPorts = { coordinatorNodeForKey.successorOnePort, coordinatorNodeForKey.successorTwoPort};
+            for ( int j = 0; j < successorPorts.length; j++ ) {
+
                 try {
-                    if ((key_hash.compareTo(genHash(avds[4])) > 0) || (key_hash.compareTo(genHash(avds[0])) < 0)) {
 
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(avds[0])*2);
-                        successor[0]=avds[1];
-                        successor[1]=avds[2];
-                        DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Insert"+":"+key+":"+value);
-                        socket.setSoTimeout(100);
-                        DataInputStream in=new DataInputStream(socket.getInputStream());
-                        current=avds[0];
-                        if(in.readUTF().equals("ACK")){
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-                    }
-                    else if ((key_hash.compareTo(genHash(avds[0])) > 0) && (key_hash.compareTo(genHash(avds[1])) < 0)){
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(avds[1])*2);
-                        successor[0]=avds[2];
-                        successor[1]=avds[3];
-                        DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Insert"+":"+key+":"+value);
-                        socket.setSoTimeout(100);
-                        DataInputStream in=new DataInputStream(socket.getInputStream());
-                        current=avds[1];
-                        if(in.readUTF().equals("ACK")){
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-                    }
-                    else if ((key_hash.compareTo(genHash(avds[1])) > 0) && (key_hash.compareTo(genHash(avds[2])) < 0)) {
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(avds[2])*2);
-                        successor[0]=avds[3];
-                        successor[1]=avds[4];
-                        DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Insert"+":"+key+":"+value);
-                        socket.setSoTimeout(100);
-                        DataInputStream in=new DataInputStream(socket.getInputStream());
-                        current=avds[2];
-                        if(in.readUTF().equals("ACK")){
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-                    }
-                    else if ((key_hash.compareTo(genHash(avds[2])) > 0) && (key_hash.compareTo(genHash(avds[3])) < 0)) {
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(avds[3])*2);
-                        successor[0]=avds[4];
-                        successor[1]=avds[0];
-                        DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Insert"+":"+key+":"+value);
-                        socket.setSoTimeout(100);
-                        DataInputStream in=new DataInputStream(socket.getInputStream());
-                        current=avds[3];
-                        if(in.readUTF().equals("ACK")){
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-                    }
+                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                            Integer.parseInt(successorPorts[j]));
 
-                    else if ((key_hash.compareTo(genHash(avds[3])) > 0) && (key_hash.compareTo(genHash(avds[4])) < 0)){
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(avds[4])*2);
-                        successor[0]=avds[0];
-                        successor[1]=avds[1];
-                        DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Insert"+":"+key+":"+value);
-                        socket.setSoTimeout(100);
-                        DataInputStream in=new DataInputStream(socket.getInputStream());
-                        current=avds[4];
-                        if(in.readUTF().equals("ACK")){
-                            out.flush();
-                            out.close();
-                            socket.close();
-                        }
-                    }
+                    socket.setSoTimeout(4000);
 
-                    Log.d("In insert else ",current);
+                    PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                    out.print(message2);
+                    out.flush();
 
-                }catch (IOException e){
-                    failed_avd=current;
-                    Log.d("In insert else","Failed avd is "+failed_avd);
-                    e.printStackTrace();
-                }
-                if(failed_avd.equals(current)){
-                    Socket socket=new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(successor[0])*2);
-                    DataOutputStream out_insert = new DataOutputStream(socket.getOutputStream());
-                    out_insert.writeUTF("Replicate 1" + ":" + key + ":" + value);
-                    DataInputStream in_insert = new DataInputStream(socket.getInputStream());
-                    String read_input = in_insert.readUTF();
-                    Log.d("read input", read_input);
-                    if (read_input.equals("ACK")) {
-                        out_insert.flush();
-                        out_insert.close();
-                        socket.close();
-                    }
-                }
-            }
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                    String responseMessage = in.readLine();
+
+                    if ( responseMessage == null ) {
 
 
-        return uri;
-    }
+                        Log.d("OwnSuccNullReplicateOn:", successorPorts[j]);
+                        continue;
 
+                    } else {
 
-    @Override
-    public boolean onCreate() {
-        // TODO Auto-generated method stub
-        try {
-            ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
-            new ServerTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, serverSocket);
-
-            TelephonyManager tel = (TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
-            portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
-            myPort = String.valueOf((Integer.parseInt(portStr) * 2));
-            Map<String, String> sort = new TreeMap<String, String>();
-
-            try {
-                current_port_hash = genHash(portStr);
-            } catch (NoSuchAlgorithmException e) {
-                e.printStackTrace();
-            }
-
-
-            for (int i = 0; i < 5; i++) {
-                sort.put(genHash(port[i]), port[i]);
-
-            }
-            avds = sort.values().toArray(new String[sort.size()]);
-
-            if(portStr.equals(avds[0])){
-                successor_node1=avds[1];
-                successor_node2=avds[2];
-                predecessor_node=avds[4];
-            }
-            else if(portStr.equals(avds[1])){
-                successor_node1=avds[2];
-                successor_node2=avds[3];
-                predecessor_node=avds[0];
-            }
-            else if(portStr.equals(avds[2])){
-                successor_node1=avds[3];
-                successor_node2=avds[4];
-                predecessor_node=avds[1];
-            }
-            else if(portStr.equals(avds[3])){
-                successor_node1=avds[4];
-                successor_node2=avds[0];
-                predecessor_node=avds[2];
-            }
-            else if(portStr.equals(avds[4])){
-                successor_node1=avds[0];
-                successor_node2=avds[1];
-                predecessor_node=avds[3];
-            }
-            String[]files=getContext().fileList();
-            if(files.length>0&&files!=null){
-                for(int k=0;k<files.length;k++){
-                    getContext().deleteFile(files[k]);
-                }
-                String str="Recover"+":"+myPort+":"+predecessor_node+":"+successor_node1;
-            new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, str, myPort);
-            }
-            else{
-                String str="New"+":"+myPort+":"+predecessor_node+":"+successor_node1+":"+successor_node2;
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, str, myPort);
-            }
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        }
-        return false;
-    }
-
-
-    private class ServerTask extends AsyncTask<ServerSocket, String, Void> {
-        @Override
-        protected Void doInBackground(ServerSocket... sockets) {
-            while (true) {
-                ServerSocket serverSocket = sockets[0];
-                try {
-                    Socket socket = serverSocket.accept();
-                    DataInputStream in_server = new DataInputStream(socket.getInputStream());
-                    DataOutputStream out_of_server = new DataOutputStream(socket.getOutputStream());
-                    String read = in_server.readUTF();
-                    Log.d("server read", read + ":" + myPort);
-                    String server_array[] = read.split(":");
-                    if (server_array[0].equals("Recover")) {
-                        String response = server_array[1]+":"+server_array[2] + ":" + server_array[3] ;
-                        out_of_server.writeUTF(response);
-                    }
-                    else if(server_array[0].equals("New")){
-                        String response=server_array[2]+":"+server_array[3]+":"+server_array[4];
-                        out_of_server.writeUTF(response);
-                    }
-                    else if (server_array[0].equals("Acknowledgement")) {
-                        out_of_server.flush();
-                        out_of_server.close();
-                        socket.close();
-                    } else if (server_array[0].equals("Replicate 1")) {
-                        Log.d("in replicate 1", "server of;" + portStr);
-                        String response = replicate_msg1(server_array[1], server_array[2]);
-                        out_of_server.writeUTF(response);
-                        out_of_server.flush();
-                        socket.close();
-                    } else if (server_array[0].equals("Replicate 2")) {
-                        Log.d("in replicate 2", "server of;" + portStr);
-                        String response = replicate_msg2(server_array[1], server_array[2]);
-                        out_of_server.writeUTF(response);
-                        out_of_server.flush();
-                        socket.close();
+                        Log.d("ResponseOwnSuccInsert:", responseMessage);
 
                     }
-                    else if(server_array[0].equals("Recovery")){
-                        String str="Recovery1"+":"+server_array[1]+":"+server_array[2]+":"+server_array[3];
-                        publishProgress(str);
-                        out_of_server.writeUTF("ACK"+":"+"");
-                        out_of_server.close();
-                        socket.close();
-                    }
 
 
-                    else if (server_array[0].equals("Insert")) {
-                        String key = server_array[1];
-                        String val = server_array[2];
-                        Uri.Builder uriBuilder = new Uri.Builder();
-                        uriBuilder.authority("edu.buffalo.cse.cse486586.simpledynamo.provider");
-                        uriBuilder.scheme("content");
-                        ContentValues cv = new ContentValues();
-                        cv.put(KEY_FIELD, key);
-                        cv.put(VALUE_FIELD, val);
-                        Uri uri = uriBuilder.build();
-                        insert(uri, cv);
-                        out_of_server.writeUTF("ACK");
-                        Thread.sleep(100);
-                        out_of_server.close();
-                        socket.close();
+                    socket.close();
 
-                    }
-                    else if(server_array[0].equals("Recover succ")){
-                        String response=recover_1(server_array[1],server_array[2]);
-                        out_of_server.writeUTF(response);
-                        out_of_server.flush();
-                        socket.close();
-                    }
-                    else if(server_array[0].equals("Response")){
-                        String str="Response"+":"+server_array[1]+":"+server_array[2];
-                        out_of_server.writeUTF("ACK");
-                        publishProgress(str);
-                        out_of_server.close();
-                        socket.close();
-                    }
+                } catch (UnknownHostException e) {
+                    Log.e(TAG, "Own successor insert failed");
+                    continue;
 
-                    else if(server_array[0].equals("Recover pred")){
-                        String response=recover_2(server_array[1]);
-                        out_of_server.writeUTF(response);
-                        out_of_server.flush();
-                        socket.close();
-                    }
-
-                    else if (server_array[0].equals("Individual query")) {
-                        Log.d("In server forward", portStr);
-                        String query = individualQuery(server_array[1]);
-                        out_of_server.writeUTF(query);
-
-                        out_of_server.flush();
-                        out_of_server.close();
-                        socket.close();
-                    } else if (server_array[0].equals("Query All")) {
-                        Log.d("In server query all", portStr);
-                        String response = queryAll(server_array[1], server_array[2]);
-                        out_of_server.writeUTF(response);
-                        out_of_server.flush();
-                        socket.close();
-                    } else if (server_array[0].equals("Delete")) {
-                        String response = deleteOne(server_array[1]);
-                        out_of_server.writeUTF(response);
-                        out_of_server.flush();
-                        socket.close();
-                    }
                 } catch (IOException e) {
-                    e.printStackTrace();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+
+                    Log.e(TAG, "IOException-For-own-query-succ" + successorPorts[j]);
+                    continue;
+
                 }
 
-
             }
-        }
 
-        protected void onProgressUpdate(String... strings) {
-
-String strReceived=strings[0].trim();
-            new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, strReceived, myPort);
-
-        }
-    }
+            //new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, message2, coordinatorNodeForKey.successorOnePort);
+            //new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, message2, coordinatorNodeForKey.successorTwoPort);
 
 
-    private String recover_2(String original){
-        String response="";
-        String keys="",values="";
-        String files[]=getContext().fileList();
-        if(files.length>0) {
+        } else {
+
+            String message = "insert" + "@" + key + "@" + value + "@" + myPort + "@" +coordinatorNodeForKey.ownPort +'\n';
+
             try {
-                String str = "";
-                for (int i = 0; i < files.length; i++) {
-                    FileInputStream fis = getContext().openFileInput(files[i]);
-                    InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                    BufferedReader br = new BufferedReader(isr);
 
-                    str = br.readLine();
+                Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                        Integer.parseInt(coordinatorNodeForKey.ownPort));
 
+                socket.setSoTimeout(4000);
 
-                    keys = keys + "-" + files[i];
-                    values = values + "-" + str;
-
-                    fis.close();
-                    isr.close();
-                }
-                if (keys.length() > 0) {
-                    keys = keys.substring(1);
-                    values = values.substring(1);
-                }
-                response = keys + ":" + values;
-            } catch (UnsupportedEncodingException e) {
-                e.printStackTrace();
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-        return response;
-
-    }
-
-
-
-
-
-    private String deleteOne(String selection) {
-
-        Context c = this.getContext();
-        c.deleteFile(selection);
-        String response = "ACK";
-
-
-        return response;
-
-
-    }
-    private String recover_1(String original,String predecessor){
-        String response="";
-        String received=null;
-        String keys="",values="";
-        try{
-            Socket socket=new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(predecessor)*2);
-            DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-            out.writeUTF("Recover pred"+":"+original);
-            DataInputStream in=new DataInputStream(socket.getInputStream());
-            received=in.readUTF();
-            if(received!=null){
-                String[] key_value_array = received.split(":");
-                if (key_value_array.length == 2) {
-                    String[] keys_array = key_value_array[0].split("-");
-                    String[] values_array = key_value_array[1].split("-");
-                    for (int i = 0; i < keys_array.length; i++) {
-                        keys = keys + "-" + keys_array[i];
-                        values = values + "-" + values_array[i];
-
-                    }
-                }
-            }
-            String[] files = getContext().fileList();
-            String str="";
-            for (int i=0;i<files.length;i++){
-                if(original.equals(String.valueOf(Integer.parseInt(avds[0])*2))){
-                    if ((genHash(files[i]).compareTo(genHash(avds[4])) > 0) || (genHash(files[i]).compareTo(genHash(avds[0])) < 0)) {
-                        FileInputStream fis = getContext().openFileInput(files[i]);
-                        InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                        BufferedReader br = new BufferedReader(isr);
-
-                        str = br.readLine();
-                        keys = keys + "-" + files[i];
-                        values = values + "-" + str;
-
-                        fis.close();
-                        isr.close();
-
-                    }
-                }
-               else if(original.equals(String.valueOf(Integer.parseInt(avds[4])*2))){
-                    if ((genHash(files[i]).compareTo(genHash(avds[3])) > 0) && (genHash(files[i]).compareTo(genHash(avds[4])) < 0)) {
-                        FileInputStream fis = getContext().openFileInput(files[i]);
-                        InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                        BufferedReader br = new BufferedReader(isr);
-
-                        str = br.readLine();
-                        keys = keys + "-" + files[i];
-                        values = values + "-" + str;
-
-                        fis.close();
-                        isr.close();
-                    }
-
-                }
-                else if(original.equals(String.valueOf(Integer.parseInt(avds[3])*2))){
-                    if ((genHash(files[i]).compareTo(genHash(avds[2])) > 0) && (genHash(files[i]).compareTo(genHash(avds[3])) < 0)) {
-                        FileInputStream fis = getContext().openFileInput(files[i]);
-                        InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                        BufferedReader br = new BufferedReader(isr);
-
-                        str = br.readLine();
-                        keys = keys + "-" + files[i];
-                        values = values + "-" + str;
-
-                        fis.close();
-                        isr.close();
-                    }
-                }
-                else if(original.equals(String.valueOf(Integer.parseInt(avds[1])*2))){
-                    if ((genHash(files[i]).compareTo(genHash(avds[0])) > 0) && (genHash(files[i]).compareTo(genHash(avds[1])) < 0)) {
-                        FileInputStream fis = getContext().openFileInput(files[i]);
-                        InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                        BufferedReader br = new BufferedReader(isr);
-
-                        str = br.readLine();
-                        keys = keys + "-" + files[i];
-                        values = values + "-" + str;
-
-                        fis.close();
-                        isr.close();
-
-
-                    }
-                }
-                else if(original.equals(String.valueOf(Integer.parseInt(avds[2])*2))){
-                    if ((genHash(files[i]).compareTo(genHash(avds[1])) > 0) && (genHash(files[i]).compareTo(genHash(avds[2])) < 0)) {
-                        FileInputStream fis = getContext().openFileInput(files[i]);
-                        InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                        BufferedReader br = new BufferedReader(isr);
-
-                        str = br.readLine();
-                        keys = keys + "-" + files[i];
-                        values = values + "-" + str;
-
-                        fis.close();
-                        isr.close();
-                    }
-                }
-
-            }
-            if (keys.length() > 0) {
-                keys = keys.substring(1);
-                values = values.substring(1);
-            }
-
-            String key_values = keys + ":" + values;
-            response="ACK";
-            Socket socket1=new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(original));
-            DataOutputStream out1=new DataOutputStream(socket1.getOutputStream());
-            out1.writeUTF("Response"+":"+key_values);
-            DataInputStream in1=new DataInputStream(socket1.getInputStream());
-            if(in1.readUTF().equals("ACK")){
-                out1.close();
-                socket1.close();
-            }
-
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        }
-
-return response;
-    }
-
-
-    private String queryAll(String selection, String originating_node) {
-        String received = null;
-        String response = null;
-        Log.d("Inside query all", predecessor_node + ":" + portStr + ":" + originating_node + ":" + successor_node1);
-        try {
-            String keys = "", values = "";
-            if (!originating_node.equals(successor_node1)) {
-                Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(successor_node1) * 2);
-
-                String str = "Query All" + ":" + selection + ":" + originating_node;
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                out.writeUTF(str);
-                DataInputStream in = new DataInputStream(socket.getInputStream());
-                received = in.readUTF();
-            }
-            if (received != null) {
-                String[] key_value_array = received.split(":");
-                if (key_value_array.length == 2) {
-                    String[] keys_array = key_value_array[0].split("-");
-                    String[] values_array = key_value_array[1].split("-");
-                    for (int i = 0; i < keys_array.length; i++) {
-                        keys = keys + "-" + keys_array[i];
-                        values = values + "-" + values_array[i];
-
-                    }
-                }
-            }
-            String[] files = getContext().fileList();
-            // Log.d("length of files",String.valueOf(files.length));
-            String str = "";
-            for (int i = 0; i < files.length; i++) {
-                Log.d("inside for", myPort);
-
-                FileInputStream fis = getContext().openFileInput(files[i]);
-                InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                BufferedReader br = new BufferedReader(isr);
-
-                str = br.readLine();
-
-
-                keys = keys + "-" + files[i];
-                values = values + "-" + str;
-
-                fis.close();
-                isr.close();
-
-
-            }
-            if (keys.length() > 0) {
-                keys = keys.substring(1);
-                values = values.substring(1);
-            }
-            response = keys + ":" + values;
-            //  Log.d("in query all", myPort + " " + response);
-
-
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        return response;
-    }
-
-    private String individualQuery(String selection) {
-
-        String key_value = "";
-        try {
-            FileInputStream fis = getContext().openFileInput(selection);
-            InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-            BufferedReader bufferedReader = new BufferedReader(isr);
-            String response = bufferedReader.readLine();
-
-
-            fis.close();
-            isr.close();
-            bufferedReader.close();
-            key_value = selection + ":" + response;
-
-
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return key_value;
-
-    }
-
-    private String replicate_msg2(String key, String value) {
-        String response = "";
-        try {
-            Log.d("in replicate msg2", key + ":" + value);
-            FileOutputStream outputStream;
-            outputStream = getContext().openFileOutput(key, Context.MODE_PRIVATE);
-            outputStream.write(value.getBytes());
-            outputStream.close();
-            response = "ACK";
-            Log.d("Replicate 2", predecessor_node + ":" + portStr + ":" + key + ":" + value);
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return response;
-    }
-
-    private String replicate_msg1(String key, String value) {
-        String response = "";
-        try {
-            Log.d("in replicate msg1", key + ":" + value);
-            FileOutputStream outputStream;
-            outputStream = getContext().openFileOutput(key, Context.MODE_PRIVATE);
-            outputStream.write(value.getBytes());
-            outputStream.close();
-            Log.d("Replicate 1", predecessor_node + ":" + portStr + ":" + key + ":" + value);
-            Log.d("sending to successor 2", successor_node1);
-            Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(successor_node1) * 2);
-            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-            out.writeUTF("Replicate 2" + ":" + key + ":" + value);
-            DataInputStream input = new DataInputStream(socket.getInputStream());
-            String read_input = input.readUTF();
-            if (read_input.equals("ACK")) {
+                PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                out.print(message);
                 out.flush();
-                out.close();
+
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                String responseMessage = in.readLine();
+
+                if ( responseMessage == null ) {
+
+                    Log.d("ActSuccNullReplicateOn", coordinatorNodeForKey.ownPort);
+
+                }
+
+
                 socket.close();
+
+            } catch (UnknownHostException e) {
+                Log.e("InsertActUnknwnHExcep", coordinatorNodeForKey.ownPort);
+
+
+            } catch (IOException e) {
+
+                Log.e(TAG, "Insert-exc-coord-act-node" + coordinatorNodeForKey.ownPort);
+
             }
-            response = "ACK";
 
 
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+
+            String message2 = "replicate" + "@" + key + "@" + value + "@" + myPort + "@" +coordinatorNodeForKey.ownPort + '\n';
+            //new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, message, coordinatorNodeForKey.ownPort);
+            //new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, message2, coordinatorNodeForKey.successorOnePort);
+            //new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, message2, coordinatorNodeForKey.successorTwoPort);
+            //forward this message to coordinator and to it's two successors as well
+
+            String[] successorPorts = { coordinatorNodeForKey.successorOnePort, coordinatorNodeForKey.successorTwoPort};
+            for ( int j = 0; j < successorPorts.length; j++ ) {
+
+                try {
+
+                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                            Integer.parseInt(successorPorts[j]));
+
+                    socket.setSoTimeout(4000);
+
+                    PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                    out.print(message2);
+                    out.flush();
+
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                    String responseMessage = in.readLine();
+
+                    if ( responseMessage == null ) {
+
+
+                        Log.d("NullReplicateOnActSucc:", successorPorts[j]);
+                        continue;
+
+                    }
+
+
+                    socket.close();
+
+                } catch (UnknownHostException e) {
+                    Log.e(TAG, "null-replicate-on-act-succ:" + successorPorts[j]);
+                    continue;
+
+                } catch (IOException e) {
+
+                    Log.e(TAG, "IOException-For-act-query-succ" + successorPorts[j]);
+                    continue;
+
+                }
+
+            }
+
+
+
+
         }
-        return response;
+
+
+
+        return null;
     }
 
+	@Override
+	public Cursor query(Uri uri, String[] projection, String selection,
+			String[] selectionArgs, String sortOrder) {
+
+		// TODO Auto-generated method stub
+
+        String[] columns = new String[2];
+        columns[0] = "key";
+        columns[1] = "value";
+        StringBuffer fileContent = new StringBuffer("");
+
+        MatrixCursor cursor = new MatrixCursor(columns);
+        MatrixCursor.RowBuilder builder;
+
+        if( !selection.equals("@") && !selection.equals("*") ) {
+
+            Node coordinatorNode = getPreferenceNodeDetails(selection);
+            Log.d(TAG,"****InsideQuery***");
+            Log.d("CoordinatorPort", coordinatorNode.ownPort);
+            Log.d("Successor1Port", coordinatorNode.successorOnePort);
+            Log.d("Successor2Port", coordinatorNode.successorTwoPort);
+            Log.d(TAG,"****InsideQuery***");
+
+            if ( coordinatorNode.ownPort.equals(myPort) ) {
+
+                Log.d("CDPortEqualsMyPort", myPort);
+                Log.d("CDPortEqualsCDPort", coordinatorNode.ownPort);
+
+
+                File file = getContext().getFileStreamPath(selection);
+
+                if ( file.exists() ) {
+
+                    Message details = keyVersionMap.get(selection);
+
+                    Log.d("QueryCDPortEqualsMyPort", myPort);
+                    Log.d("CDPortFromDetailMsg", details.coordinatorPort);
+
+
+
+                    int coordinatorVersionVal = details.versionNumber;
+                    int versionValueChecker = coordinatorVersionVal;
+                    String fileValue = "";
+
+                    try {
+
+
+                        FileInputStream fis;
+                        fis = getContext().openFileInput(selection);
+
+                        byte[] buffer = new byte[1024];
+
+                        int n;
+
+                        while ((n = fis.read(buffer)) != -1) {
+
+                            fileContent.append(new String(buffer, 0, n));
+
+                        }
+                        Log.d("File Content:", fileContent.toString());
+
+                        //builder = cursor.newRow();
+                        //builder.add(selection);
+                        //builder.add(fileContent);
+
+                        //Log.v("query", selection);
+                        //cursor.close();
+                        //return cursor;
+
+                        fileValue = fileContent.toString();
+                        String message = "retrieve_key" + "@" + selection + "@" + myPort + '\n';
+
+
+                        String[] successorPorts = { coordinatorNode.successorOnePort, coordinatorNode.successorTwoPort};
+
+                        for ( int j = 0; j < successorPorts.length; j++ ) {
+
+                            try {
+
+                                Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                                        Integer.parseInt(successorPorts[j]));
+
+                                socket.setSoTimeout(4000);
+
+                                PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                                out.print(message);
+                                out.flush();
+
+                                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                                String responseMessage = in.readLine();
+
+                                if ( responseMessage == null ) {
+
+
+                                    Log.d("response-retrieve-port:", successorPorts[j]);
+                                    continue;
+
+                                } else {
+
+                                    String unformattedMessage = responseMessage.trim();
+                                    String[] messageData = unformattedMessage.split("@");
+
+                                    int successorVersionVal = Integer.valueOf(messageData[3]);
+
+                                    if ( successorVersionVal >= versionValueChecker ) {
+
+                                        fileValue = messageData[2];
+                                        versionValueChecker = successorVersionVal;
+
+                                    }
+
+
+                                }
+
+
+                                socket.close();
+
+                            } catch (UnknownHostException e) {
+                                Log.e(TAG, "SendJoinRequestTask UnknownHostException");
+
+                            } catch (IOException e) {
+
+                                Log.e(TAG, "IOException-For-query-succ" + successorPorts[j]);
+
+                            }
+
+
+                        }
+
+                        builder = cursor.newRow();
+                        builder.add(selection);
+                        builder.add(fileValue);
+                        Log.v("query", selection);
+                        cursor.close();
+                        return cursor;
+
+
+
+                    } catch (Exception e) {
+
+                        Log.e(TAG, "File read failed");
+
+                    }
+
+
+
+                } else {
+
+                    Log.d("Error-should-have-file", "but-don't-have-it");
+
+                }
+
+
+            } else {
+
+                Log.d("Asli-node", "se pucho");
+
+                String[] allPorts = { coordinatorNode.ownPort, coordinatorNode.successorOnePort, coordinatorNode.successorTwoPort};
+                String message = "retrieve_key" + "@" + selection + "@" + myPort + '\n';
+
+                int versionValueChecker = 0;
+                String fileValue = "";
+
+                for ( int j = 0; j < allPorts.length; j++ ) {
+
+                    try {
+
+                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                                Integer.parseInt(allPorts[j]));
+
+                        socket.setSoTimeout(4000);
+
+
+
+                        PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                        out.print(message);
+                        out.flush();
+
+                        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                        String responseMessage = in.readLine();
+
+                        if ( responseMessage == null ) {
+
+                            Log.d("response-retrieve-key:", "null" + allPorts[j]);
+                            continue;
+
+                        } else {
+
+                            Log.d("response-retrieve-key:", responseMessage);
+
+                            String unformattedMessage = responseMessage.trim();
+                            String[] messageData = unformattedMessage.split("@");
+
+                            int successorVersionVal = Integer.valueOf(messageData[3]);
+
+                            if ( successorVersionVal >= versionValueChecker ) {
+
+                                fileValue = messageData[2];
+                                versionValueChecker = successorVersionVal;
+
+                            }
+
+
+                        }
+
+
+
+                        socket.close();
+
+                    } catch (UnknownHostException e) {
+                        Log.e(TAG, "SendJoinRequestTask UnknownHostException");
+
+                    } catch (IOException e) {
+
+                        Log.e(TAG, "IOExceptionFor-query-rel-node" + allPorts[j]);
+
+                    }
+
+
+                }
+
+                builder = cursor.newRow();
+                builder.add(selection);
+                builder.add(fileValue);
+                Log.v("query", selection);
+                cursor.close();
+                return cursor;
+
+            }
+
+
+        } else if ( selection.equals("@")) {
+
+
+            try {
+
+
+                Log.d("Selection:", selection);
+
+                FileInputStream fis;
+
+                String[] filenames = getContext().fileList();
+
+                for ( String name : filenames ) {
+
+                    String[] record = new String[2];
+
+
+                    Log.d("FileName:", name);
+                    fis = getContext().openFileInput(name);
+
+                    byte[] buffer = new byte[1024];
+
+                    int n;
+
+                    while ((n = fis.read(buffer)) != -1) {
+
+                        fileContent.append(new String(buffer, 0, n));
+
+                    }
+
+                    record[0] = name;
+                    record[1] = fileContent.toString();
+
+                    //reset string buffer
+                    fileContent.delete(0, fileContent.length());
+
+
+                    cursor.addRow(record);
+
+
+                }
+
+            } catch (Exception e) {
+
+                Log.e(TAG, "File read failed");
+
+            }
+
+
+
+        } else {
+
+            Log.d("Inside-Star", "case");
+
+            try {
+
+                FileInputStream fis;
+
+                String[] filenames = getContext().fileList();
+
+                for ( String name : filenames ) {
+
+                    String[] record = new String[2];
+
+
+                    Log.d("FileName:", name);
+                    fis = getContext().openFileInput(name);
+
+                    byte[] buffer = new byte[1024];
+
+                    int n;
+
+                    while ((n = fis.read(buffer)) != -1) {
+
+                        fileContent.append(new String(buffer, 0, n));
+
+                    }
+
+                    record[0] = name;
+                    record[1] = fileContent.toString();
+
+                    //reset string buffer
+                    fileContent.delete(0, fileContent.length());
+
+
+                    cursor.addRow(record);
+
+
+                }
+
+            } catch (Exception e) {
+
+                Log.e(TAG, "File read failed");
+
+            }
+
+            for ( int j=0; j < portList.length; j++ ) {
+
+                if (!portList[j].equals(myPort)) {
+
+                    try {
+
+                        String message = "retrieve_all" + "@" + myPort + '\n';
+                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                                Integer.parseInt(portList[j]));
+
+                        PrintWriter out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                        out.print(message);
+                        out.flush();
+
+                        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                        String responseMessage = in.readLine();
+
+                        if ( responseMessage == null ) {
+
+                            Log.d("Starcase-query-fail", portList[j]);
+                            continue;
+
+                        } else {
+
+                            Log.d("Message response:", responseMessage);
+
+                            String unformattedMessage = responseMessage.trim();
+                            String[] messageData = unformattedMessage.split("@");
+
+                            if ( !messageData[0].equals("no_files") ) {
+
+
+                                String keyValuePairsString = messageData[0];
+
+                                Log.d("Key-Value-String", keyValuePairsString);
+
+                                String[] keyValuePairArray = keyValuePairsString.split("-");
+
+                                for (String pair : keyValuePairArray ) {
+
+                                    Log.d("Pair", pair);
+
+                                    String[] pairSplit = pair.split(",");
+
+                                    builder = cursor.newRow();
+                                    builder.add(pairSplit[0]);
+                                    builder.add(pairSplit[1]);
+
+                                }
+
+
+                            }
+
+
+
+                        }
+
+
+
+
+                    } catch (UnknownHostException e) {
+                        Log.e(TAG, "UnknownHostException");
+                    } catch (IOException e) {
+                        Log.e(TAG, "IO Exception For-retall-@" + portList[j]);
+                    }
+
+
+                }
+
+
+            }
+
+
+        }
+
+
+		return cursor;
+	}
+
+    public Node getPreferenceNodeDetails( String key ) {
+
+
+        Node currentNode = null;
+
+        try {
+
+            String hashOfKey = genHash(key);
+
+            int i;
+
+            for ( i=0; i < nodeList.size(); i++ ) {
+                currentNode = null;
+                currentNode = nodeList.get(i);
+                //Log.d("Node", currentNode.avdNum);
+
+                if ( hashOfKey.compareTo(currentNode.hashOfPredecessor) > 0 && i == 0 ) {
+
+                    //Log.d("Key", key);
+                    //Log.d("Hash-key", hashOfKey);
+                    //Log.d("hash-predecessor", currentNode.hashOfPredecessor);
+                    return currentNode;
+
+                } else if ( hashOfKey.compareTo(currentNode.hashOwnAvd) <= 0) {
+
+                    //Log.d("Here", "in else condition");
+                    //Log.d("Key", key);
+                    //Log.d("Hash-key", hashOfKey);
+                    //Log.d("hash-predecessor", currentNode.hashOfPredecessor);
+                    return currentNode;
+
+                }
+
+
+            }
+
+
+        } catch (NoSuchAlgorithmException e ) {
+
+            Log.d(TAG, "error generating hash of key");
+
+        }
+
+        return currentNode;
+    }
 
     private class ClientTask extends AsyncTask<String, Void, Void> {
 
         @Override
         protected Void doInBackground(String... msgs) {
+
+            Log.d("Message", msgs[0]);
+            Log.d("port", msgs[1]);
+
+
             try {
-                String msg = msgs[0];
-                String msg_read[] = msg.split(":");
-                if (msg_read[0].equals("New")) {
 
-                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(msg_read[1]));
-                    DataOutputStream to_server = new DataOutputStream(socket.getOutputStream());
+                Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                        Integer.parseInt(msgs[1]));
 
-                    to_server.writeUTF(msg);
-                    DataInputStream from_server = new DataInputStream(socket.getInputStream());
-                    String read[] = from_server.readUTF().split(":");
-                    successor_node1=read[1];
-                    predecessor_node=read[0];
-                    successor_node2=read[2];
-                    predecessor_hash = genHash(predecessor_node);
-                    successor1_hash = genHash(successor_node1);
-                    successor2_hash = genHash(successor_node2);
-                    Log.d("info of " + portStr, predecessor_node + ":" + successor_node1 + ":" + successor_node2);
-                    to_server.writeUTF("Acnowledgement" + ":" + "");
-                    from_server.close();
-                    to_server.flush();
-                    to_server.close();
-                    socket.close();
+                socket.setSoTimeout(4000);
 
+                PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                out.print(msgs[0]);
+                out.flush();
 
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                String responseMessage = in.readLine();
+
+                if ( responseMessage == null ) {
+
+                    Log.d("Message response:", "null aaya");
+
+                } else {
+
+                    Log.d("Message response:", responseMessage);
 
                 }
-                else if(msg_read[0].equals("Recover")){
-                    Socket socket=new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(msg_read[1]));
-                    DataOutputStream to_server = new DataOutputStream(socket.getOutputStream());
 
-                    to_server.writeUTF(msg);
-                    DataInputStream from_server = new DataInputStream(socket.getInputStream());
-                    String read[] = from_server.readUTF().split(":");
-                    String current=read[0];
-                    successor_node1=read[2];
-                    predecessor_node=read[1];
-                    to_server.writeUTF("Recovery"+":"+current+":"+predecessor_node+":"+successor_node1);
-                    if(read[0].equals("ACK")){
-                        to_server.flush();
-                        to_server.close();
-                        socket.close();
-                    }
 
-                }
-                else if(msg_read[0].equals("Recovery 1")){
-                    Socket socket=new Socket(InetAddress.getByAddress(new byte[]{10,0,2,2}),Integer.parseInt(msg_read[3])*2);
-                    DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                    out.writeUTF("Recover succ"+":"+msg_read[1]+":"+msg_read[2]);
-                    DataInputStream in=new DataInputStream(socket.getInputStream());
-                    if(in.readUTF().equals("ACK")){
-                        out.close();
-                        socket.close();
-                    }
-                }
-                else if(msg_read[0].equals("Response")){
-                    String keys[]=msg_read[1].split("-");
-                    String values[]=msg_read[2].split("-");
-                    FileOutputStream outputStream;
-                    for (int i=0;i<keys.length;i++){
-                        outputStream = getContext().openFileOutput(keys[i], Context.MODE_PRIVATE);
-                        outputStream.write(values[i].getBytes());
-                        outputStream.close();
-                    }
-                }
+                socket.close();
 
             } catch (UnknownHostException e) {
-                e.printStackTrace();
+                Log.e(TAG, "SendJoinRequestTask UnknownHostException");
+            } catch (SocketTimeoutException e) {
+
+                Log.e(TAG, "timeout-for-" + msgs[1]);
+
             } catch (IOException e) {
-                e.printStackTrace();
-            } catch (NoSuchAlgorithmException e) {
-                e.printStackTrace();
+                Log.e(TAG, "IO Exception For" + msgs[1]);
             }
+
+
             return null;
-
         }
     }
 
-    @Override
-    public synchronized Cursor query(Uri uri, String[] projection, String selection,
-                                     String[] selectionArgs, String sortOrder) {
-        // TODO Auto-generated method stub
-        // Log.d("In query", selection);
-        MatrixCursor cursor = new MatrixCursor(new String[]{"key", "value"});
-        String originating_node = portStr;
-        try {
-            //Log.d("In @ query",portStr);
-            if (selection.equals("@") || selection.equals("/@/")) {
-                String[] files = getContext().fileList();
-                Log.d("In @ query", portStr);
+    private class RetrieveKeyTask extends AsyncTask<String, Void, Void> {
 
-                String str = "";
-                for (int i = 0; i < files.length; i++) {
+        @Override
+        protected Void doInBackground(String... msgs) {
+
+/*
+            String[] filenames = getContext().fileList();
+            int count = 0;
+
+            for ( String name : filenames ) {
 
 
-                    FileInputStream fis = getContext().openFileInput(files[i]);
-                    InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                    BufferedReader br = new BufferedReader(isr);
+                File dir = getContext().getFilesDir();
+                File file = new File(dir, name);
+                boolean deleted = file.delete();
 
-                    str = br.readLine();
 
-                    fis.close();
-                    isr.close();
+                if (deleted) {
 
-                    cursor.addRow(new String[]{files[i], str});
+                    count = count + 1;
 
-                    Log.d("type@", " Value :" + str + " retrieved for key :" + files[i]);
+                } else {
+
+                    Log.d("Delete", "Nahi chala");
+
+                }
+
+
+            }
+            //clear the hashmap
+            keyVersionMap.clear();*/
+
+
+
+            Log.d("Message", msgs[0]);
+            Log.d("port", msgs[1]);
+            Log.d("predecessor", msgs[2]);
+
+            String unformattedMessage = "";
+            String[] ports = new String[0];
+
+            unformattedMessage = msgs[1].trim();
+            ports = unformattedMessage.split("-");
+            //add the predecessor as well to the calling ports
+
+            String unformattedPorts = msgs[2].trim();
+            String [] predecessorPorts = new String[0];
+            predecessorPorts = unformattedPorts.split("-");
+
+
+
+
+                for ( int j=0; j < predecessorPorts.length; j++ ) {
+
+                    try {
+
+
+                        String predecessorMessage = "retrieve_your_keys" + "@" + myPort;
+
+                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                                Integer.parseInt(predecessorPorts[j]));
+
+                        socket.setSoTimeout(4000);
+
+                        PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                        out.print(predecessorMessage);
+                        out.flush();
+
+                        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                        String responseMessage = in.readLine();
+
+                        if ( responseMessage == null ) {
+
+                            Log.d("Retrieve-Task-Pred", "failed");
+
+                        } else {
+
+                            String unformattedResponseMessage = responseMessage.trim();
+                            String[] messageData = unformattedResponseMessage.split("@");
+
+                            if ( !messageData[0].equals("no_files") ) {
+
+                                String keyValuePairsString = messageData[0];
+
+                                Log.d("Key-Value-String", keyValuePairsString);
+
+                                String[] keyValuePairArray = keyValuePairsString.split("-");
+
+                                for (String pair : keyValuePairArray ) {
+
+                                    Log.d("Pair", pair);
+
+                                    String[] pairSplit = pair.split(",");
+
+                                    /*Message details = new Message();
+                                    details.coordinatorPort = messageData[1];
+                                    details.versionNumber = 1;
+                                    keyVersionMap.put(pairSplit[0], details);
+
+
+                                    String filename = pairSplit[0];
+                                    FileOutputStream outputStream;
+
+                                    try {
+                                        outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                        outputStream.write(pairSplit[1].getBytes());
+                                        outputStream.close();
+                                    } catch (Exception e) {
+                                        Log.e(TAG, "File write failed");
+                                    }*/
+
+                                    if ( keyVersionMap.get(pairSplit[0]) == null ) {
+
+                                        Message details = new Message();
+                                        details.coordinatorPort = messageData[1];
+                                        details.versionNumber = 1;
+                                        keyVersionMap.put(pairSplit[0], details);
+
+
+                                        String filename = pairSplit[0];
+                                        FileOutputStream outputStream;
+
+                                        try {
+                                            outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                            outputStream.write(pairSplit[1].getBytes());
+                                            outputStream.close();
+                                        } catch (Exception e) {
+                                            Log.e(TAG, "File write failed");
+                                        }
+
+                                        Log.d("Insert-Server-New", "Key:" + pairSplit[0] + ", values:" + pairSplit[1]);
+
+
+                                    } else {
+
+
+                                        Message details = keyVersionMap.get(pairSplit[0]);
+                                        int old_version_number = details.versionNumber;
+
+                                        int response_version_number = Integer.valueOf(pairSplit[2]);
+
+                                        if ( old_version_number <= response_version_number ) {
+
+                                            details.versionNumber = details.versionNumber + 1;
+                                            keyVersionMap.put(pairSplit[0], details);
+
+                                            if ( getContext().deleteFile(pairSplit[0])) {
+
+
+                                                String filename = pairSplit[0];
+                                                FileOutputStream outputStream;
+
+                                                try {
+                                                    outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                                    outputStream.write(pairSplit[1].getBytes());
+                                                    outputStream.close();
+                                                } catch (Exception e) {
+                                                    Log.e(TAG, "File write failed");
+                                                }
+
+                                                Log.d("Insert-Server-Upd", "Key:" + pairSplit[0] + ", values:" + pairSplit[1]);
+
+
+                                            } else {
+
+                                                Log.d("Error-updating-file", pairSplit[0]);
+
+                                            }
+
+                                        }
+
+
+                                    }
+
+                                    Log.d("Insert-Server-New", "Key:" + pairSplit[0] + ", values:" + pairSplit[1]);
+
+
+                                }
+
+                            }
+
+
+                        }
+                        socket.close();
+
+                    } catch (UnknownHostException e) {
+                        Log.e(TAG, "SendJoinRequestTask UnknownHostException");
+                        continue;
+                    } catch (IOException e) {
+                        Log.e(TAG, "IO Exception For" + predecessorPorts[j]);
+                        continue;
+                    }
+
+
+
 
 
                 }
-                return cursor;
 
 
-            } else if (selection.equals("*") || selection.equals("/*/")) {
-                Log.d("in type * query", portStr);
 
-                String[] files = getContext().fileList();
-                Log.d("FilesLength", Integer.toString(files.length));
-                String str = "";
-                for (int i = 0; i < files.length; i++) {
+            try {
+
+                for (int i = 0; i < ports.length; i++ ) {
+
+                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                            Integer.parseInt(ports[i]));
+
+                    socket.setSoTimeout(4000);
+
+                    PrintWriter out= new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
+                    out.print(msgs[0]);
+                    out.flush();
+
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                    String responseMessage = in.readLine();
+
+                    if ( responseMessage == null ) {
+
+                        Log.d("Retrieve-Task", "failed");
+
+                    } else {
 
 
-                    FileInputStream fis = getContext().openFileInput(files[i]);
-                    InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                    BufferedReader br = new BufferedReader(isr);
+                        String unformattedResponseMessage = responseMessage.trim();
+                        String[] messageData = unformattedResponseMessage.split("@");
 
-                    str = br.readLine();
+                        if ( !messageData[0].equals("no_files") ) {
 
-                    fis.close();
-                    isr.close();
-                    Log.d("in type * loop1", files[i] + str);
 
-                    cursor.addRow(new String[]{files[i], str});
-                }
-                Log.d("After loop 1", "in *");
-                Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(successor_node1) * 2);
-                String to_Send = "Query All" + ":" + "*" + ":" + originating_node;
-                Log.d("Sending to successor", to_Send);
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                out.writeUTF(to_Send);
-                DataInputStream in_query = new DataInputStream(socket.getInputStream());
-                String from_server = in_query.readUTF();
-                String key_values[] = from_server.split(":");
-                String key_pos[] = key_values[0].split("-");
-                if (key_pos.length > 0) {
-                    Log.d("no.of rows in", myPort + key_pos);
-                    String value_pos[] = key_values[1].split("-");
-                    for (int i = 0; i < key_pos.length; i++) {
-                        cursor.addRow(new String[]{key_pos[i], value_pos[i]});
-                        Log.d("in type *", "in for loop");
+                            String keyValuePairsString = messageData[0];
+
+                            Log.d("Key-Value-String", keyValuePairsString);
+
+                            String[] keyValuePairArray = keyValuePairsString.split("-");
+
+                            for (String pair : keyValuePairArray ) {
+
+                                Log.d("Pair", pair);
+
+                                String[] pairSplit = pair.split(",");
+
+
+                                if ( keyVersionMap.get(pairSplit[0]) == null ) {
+
+                                    Message details = new Message();
+                                    details.coordinatorPort = myPort;
+                                    details.versionNumber = 1;
+                                    keyVersionMap.put(pairSplit[0], details);
+
+
+                                    String filename = pairSplit[0];
+                                    FileOutputStream outputStream;
+
+                                    try {
+                                        outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                        outputStream.write(pairSplit[1].getBytes());
+                                        outputStream.close();
+                                    } catch (Exception e) {
+                                        Log.e(TAG, "File write failed");
+                                    }
+
+                                    Log.d("Insert-Server-New", "Key:" + pairSplit[0] + ", values:" + pairSplit[1]);
+
+
+                                } else {
+
+
+                                    Message details = keyVersionMap.get(pairSplit[0]);
+                                    int old_version_number = details.versionNumber;
+
+                                    int response_version_number = Integer.valueOf(pairSplit[2]);
+
+                                    if ( old_version_number <= response_version_number ) {
+
+                                        details.versionNumber = details.versionNumber + 1;
+                                        keyVersionMap.put(pairSplit[0], details);
+
+                                        if ( getContext().deleteFile(pairSplit[0])) {
+
+
+                                            String filename = pairSplit[0];
+                                            FileOutputStream outputStream;
+
+                                            try {
+                                                outputStream = getContext().openFileOutput(filename, Context.MODE_PRIVATE);
+                                                outputStream.write(pairSplit[1].getBytes());
+                                                outputStream.close();
+                                            } catch (Exception e) {
+                                                Log.e(TAG, "File write failed");
+                                            }
+
+                                            Log.d("Insert-Server-Upd", "Key:" + pairSplit[0] + ", values:" + pairSplit[1]);
+
+
+                                        } else {
+
+                                            Log.d("Error-updating-file", pairSplit[0]);
+
+                                        }
+
+                                    }
+
+
+                                }
+
+
+                            }
+
+
+                        }
+
 
                     }
+
                     socket.close();
-                }
-                return cursor;
-            } else if (((genHash(selection).compareTo(predecessor_hash) > 0) && (genHash(selection).compareTo(current_port_hash) < 0)) || (((genHash(selection).compareTo(predecessor_hash) > 0) || (genHash(selection).compareTo(current_port_hash) < 0)) && (predecessor_hash.compareTo(current_port_hash) > 0) && (successor1_hash.compareTo(current_port_hash) > 0))) {
-                Log.d("Current individual", genHash(selection) + ":" + genHash(portStr));
-                String s = "";
-                FileInputStream fis = getContext().openFileInput(selection);
-                InputStreamReader isr = new InputStreamReader(fis, "UTF-8");
-                BufferedReader bufferedReader = new BufferedReader(isr);
-                s = bufferedReader.readLine();
 
-
-                fis.close();
-                isr.close();
-                bufferedReader.close();
-                cursor.addRow(new String[]{selection, s});
-
-
-                cursor.setNotificationUri(getContext().getContentResolver(), uri);
-
-                return cursor;
-            } else {
-                String[] key_value = new String[2];
-                Log.d("FORWARDQUERY", selection);
-                if ((genHash(selection).compareTo(genHash(avds[4])) > 0) || (genHash(selection).compareTo(genHash(avds[0])) < 0)) {
-                    Log.d("In forward query", genHash(avds[0]) + ":" + selection + ":" + genHash(selection));
-                    if(!failed_avd.equals(avds[2])){
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[2]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");}
-                    else{
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[1]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");
-                    }
-                } else if ((genHash(selection).compareTo(genHash(avds[3])) > 0) && (genHash(selection).compareTo(genHash(avds[4])) < 0)) {
-                    Log.d("In forward query", genHash(avds[4]) + ":" + selection + ":" + genHash(selection));
-                    if(!failed_avd.equals(avds[1])){
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[1]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");}
-                    else{
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[0]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");
-                    }
-                } else if ((genHash(selection).compareTo(genHash(avds[2])) > 0) && (genHash(selection).compareTo(genHash(avds[3])) < 0)) {
-                    Log.d("In forward query", genHash(avds[3]) + ":" + selection + ":" + genHash(selection));
-                    if(!failed_avd.equals(avds[0])){
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[0]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");}
-                    else{
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[4]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");
-                    }
-
-                } else if ((genHash(selection).compareTo(genHash(avds[0])) > 0) && (genHash(selection).compareTo(genHash(avds[1])) < 0)) {
-                    Log.d("In forward query", genHash(avds[1]) + ":" + selection + ":" + genHash(selection));
-                    if(!failed_avd.equals(avds[3])){
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[3]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");}
-                    else {
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[2]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");
-                    }
-
-                } else if ((genHash(selection).compareTo(genHash(avds[1])) > 0) && (genHash(selection).compareTo(genHash(avds[2])) < 0)) {
-                    Log.d("In forward query", genHash(avds[2]) + ":" + selection + ":" + genHash(selection));
-                    if(!failed_avd.equals(avds[4])){
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[4]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");}
-                    else {
-                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), Integer.parseInt(avds[3]) * 2);
-                        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                        out.writeUTF("Individual query" + ":" + selection);
-                        DataInputStream in = new DataInputStream(socket.getInputStream());
-                        key_value = in.readUTF().split(":");
-                    }
 
                 }
-                cursor.addRow(new String[]{key_value[0], key_value[1]});
-                return cursor;
+
+
+            } catch (UnknownHostException e) {
+                Log.e(TAG, "SendJoinRequestTask UnknownHostException");
+            } catch (IOException e) {
+                Log.e(TAG, "IO Exception For" + msgs[1]);
             }
 
-        } catch (FileNotFoundException e1) {
-            e1.printStackTrace();
-        } catch (IOException e1) {
-            e1.printStackTrace();
-        } catch (NoSuchAlgorithmException e1) {
-            e1.printStackTrace();
+
+            return null;
         }
-        // return cursor;
-
-
-        return null;
     }
 
-    @Override
-    public int update(Uri uri, ContentValues values, String selection,
-                      String[] selectionArgs) {
-        // TODO Auto-generated method stub
-        return 0;
+
+	@Override
+	public int update(Uri uri, ContentValues values, String selection,
+			String[] selectionArgs) {
+		// TODO Auto-generated method stub
+
+
+		return 0;
+	}
+
+    private String getAvdNumberFromPort ( String port ) {
+
+        String avdNumber = "";
+
+        int portNumber = Integer.valueOf(port);
+        int avd = portNumber / 2;
+        avdNumber = String.valueOf(avd);
+
+        return avdNumber;
     }
+
+
+    private Uri buildUri(String scheme, String authority) {
+        Uri.Builder uriBuilder = new Uri.Builder();
+        uriBuilder.authority(authority);
+        uriBuilder.scheme(scheme);
+        return uriBuilder.build();
+    }
+
 
     private String genHash(String input) throws NoSuchAlgorithmException {
         MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
